@@ -1,0 +1,207 @@
+---
+title: 'Tidy Tuesday: San Francisco Tree'
+output: 
+  html_document:
+    code_folding: "hide"
+    fig_width: 9
+    fig_height: 5
+---
+
+```{r global options, include = FALSE}
+
+library(bootstraplib)
+library(tidytuesdayR)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(mapdeck)
+
+bs_theme_new()
+bs_theme_add_variables(
+  `body-bg` = "#F2F3F1", 
+  `body-color` = "#153A00", 
+  `input-border-color` = "#8A9D80",
+  light = "#153A00",
+  `font-family-sans-serif` = "\"Helvetica Neue\",Arial", 
+  spacer = "2rem"
+)
+
+knitr::opts_chunk$set(comments = FALSE, warning=FALSE, message=FALSE)
+```
+
+### General Set Up / Process
+
+- Set custom `ggplot2` theme
+- Set custom color scale
+- Load data using `tidytuesdayR` package
+- _Slightly_ modify the dataset
+  - Calculate approximate age of tree
+  - Replace odd (>200) tree diameters with average diameter
+  - Filter out trees with lat and long not _actually_ in San Francisco 
+  
+
+``` {r}
+
+# Set Themes --------------------------------------------------------------
+theme_set(theme_classic())
+
+theme_minimal() %+replace% 
+  theme(
+  axis.title.y = element_blank(), 
+  axis.title.x = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  panel.grid.major.x = element_blank(),
+  legend.title = element_blank(),
+  complete = T
+) %>%
+  theme_set()
+
+colors <-  colorRampPalette(c("#A7B59F", "#153A00"))(6)
+
+# Load Data Sets ----------------------------------------------------------
+tt_data <- tidytuesdayR::tt_load('2020-01-28') 
+sf_trees <- tt_data$sf_trees
+
+
+# A little bit of clean up ------------------------------------------------
+# Calculate appro AGE in years
+# Remove unusual diameter (dbh) values
+
+sf_trees <- sf_trees %>%
+  mutate(
+    age = interval(date, today()) / years(1),
+    dbh = ifelse(dbh > 200 | dbh == 0, NA, dbh)
+  )
+```
+
+
+
+### Explore Diameter and Age Measures
+
+```{r}
+plot_dist_diameter <- ggplot(sf_trees, aes(dbh)) +
+  geom_histogram(binwidth = 5, fill = colors[6], alpha = .75, color = '#FFFFFF') +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = 'SF Trees Diameter Distribution')
+
+plot_dist_diameter
+```
+
+```{r}
+plot_dist_age <- ggplot(sf_trees, aes(age))+
+  geom_histogram(binwidth = 5, fill = colors[6], alpha = .75, color = '#FFFFFF') +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = 'SF Trees Age Distribution')
+
+plot_dist_age
+```
+
+```{r}
+plot_diam_by_age <- ggplot(sf_trees, aes(date,dbh)) +
+  geom_hex(alpha = .95, color = '#FFFFFF') +
+  scale_fill_gradient(low='#E2E6DF', high = colors[6]) +
+  labs(title = 'SF Trees Diameter by Date')
+
+plot_diam_by_age
+```
+
+### Create Functions for Mapping
+
+- Filter unusable lat and long 
+- Summarize stats
+  - Attempt to summary stats into 100 square meter areas
+  - Uncount dataframe as a workaround since `Mapdeck` scales and colors based on bin counts
+
+```{r}
+# Create Prep and Map Functions -------------------------------------------
+
+f_prepare_data <- function(df, measure) {
+  
+  ## Remove lat and long not close to SF
+  df <- df %>%
+    filter(
+      !is.na(latitude), 
+      !is.na(longitude),
+      latitude >= 37.7,
+      latitude < 38,
+      longitude >= -123,
+      longitude <= -122
+    ) 
+  
+  ### Round Lat and Long to 3rd decimal and summarize 
+  df <- df %>%
+    select(latitude, longitude, measure = !!measure) %>%
+    filter(!is.na(measure)) %>%
+    mutate(
+      latitude = round(latitude,3),
+      longitude = round(longitude,3)
+    ) %>%
+    group_by(latitude, longitude) %>%
+    summarize(mean = mean(measure, rm.na = T)) %>%
+    mutate(mean = replace_na(mean, 0)) 
+  
+  ## Uncount mean. 
+  ## Necessary transform in order to map appropriately
+  df %>%
+    uncount(mean)
+  
+}
+
+plot_map <- function(df) {
+
+  df %>%
+    mapdeck(
+      token = Sys.getenv('MAPBOX_TOKEN'),
+      style = mapdeck_style("light"),
+      pitch = 55,
+      zoom = 12,
+      bearing = 10,
+      location = c(-122.445,37.75)
+    ) %>%
+      add_hexagon(
+        lat = "latitude",
+        lon = "longitude",
+        layer_id = "hex_layer",
+        elevation_scale = 2,
+        radius = 11.132^2,
+        colour_range = colors,
+        highlight_colour = '#E2E6DFFF',
+        auto_highlight = T,
+        update_view = F
+      ) 
+  
+}
+```
+
+### Map: Average Tree Diameter
+
+Taller and darker bins equate to larger trees on average.
+
+```{r}
+sf_trees %>%
+  f_prepare_data(quo(dbh)) %>%
+  plot_map()
+```
+
+### Map: Average Tree Age
+
+Taller and darker bins equate to older trees on average.
+
+```{r}
+sf_trees %>%
+  f_prepare_data(quo(age)) %>%
+  plot_map()
+```
+
+### Notes
+
+Libraries
+
+- bootstraplib
+- tidytuesdayR
+- tidyverse
+- ggplot2
+- lubridate
+- mapdeck
+
+Dataset: [TidyTuesday Data](https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-01-28)
