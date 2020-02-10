@@ -9,22 +9,13 @@ output:
 
 ```{r global options, include = FALSE}
 
-library(bootstraplib)
+
 library(tidytuesdayR)
 library(tidyverse)
 library(ggplot2)
 library(lubridate)
 library(mapdeck)
 
-bs_theme_new()
-bs_theme_add_variables(
-  `body-bg` = "#F2F3F1", 
-  `body-color` = "#153A00", 
-  `input-border-color` = "#8A9D80",
-  light = "#153A00",
-  `font-family-sans-serif` = "\"Helvetica Neue\",Arial", 
-  spacer = "2rem"
-)
 
 knitr::opts_chunk$set(comments = FALSE, warning=FALSE, message=FALSE)
 ```
